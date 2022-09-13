@@ -18,8 +18,9 @@ async function start() {
     }
 
     const web3 = new Web3(new Web3.providers.HttpProvider(network_url));
+    const chainId = await web3.eth.getChainId();
     const account = web3.eth.accounts.privateKeyToAccount(PRIVATE_KEY);
-
+    web3.eth.accounts.wallet.add(account);
     console.log(`
     --------------------------------------------
                  🚀 BOT STARTED 🚀
@@ -37,6 +38,7 @@ async function start() {
 
     snipe({
         web3,
+        chainId,
         account,
         contractAddress: CONTRACT_ADDRESS,
         bnbAmount: BNB_AMOUNT,
@@ -47,12 +49,13 @@ async function start() {
 
 async function snipe(args: {
     web3: Web3,
+    chainId: number,
     account: Account,
     contractAddress: string,
     pollTime?: string,
     bnbAmount: string
 }) {
-    const { web3, account, contractAddress, bnbAmount, pollTime = '1000' } = args;
+    const { web3, chainId, account, contractAddress, bnbAmount, pollTime = '1000' } = args;
     const sniperWorker = async () => {
         web3.eth.estimateGas({
             to: contractAddress,
@@ -62,11 +65,31 @@ async function snipe(args: {
             (gas) => {
                 console.log(`✅ GAS ESTIMATED: ${gas}`);
                 console.log(`💸 Buying for ${bnbAmount} BNB...`);
+                const txParams = {
+                    gas: web3.utils.toHex(gas),
+                    from: account.address,
+                    chainId: chainId,
+                    value: web3.utils.toHex(web3.utils.toWei(bnbAmount, 'ether')),
+                    to: contractAddress
+                };
+                web3.eth.sendTransaction(txParams, (err, txHash) => {
+                    if (err) {
+                        console.error(`❌❌ Error: ${err.message} ❌❌`);
+                        return;
+                    }
+                    console.log(`✅✅ Transaction sent: ${txHash} ✅✅`);
+                })
             }
         ).catch(
             (err) => {
                 if (err.message) {
-                    console.log('Presale contract is not active yet : ' + err.message);
+                    if (err.message.indexOf("insufficient funds for gas") > 0) {
+                        console.log(`💥💥 Account have no funds:  ${err.message} 💥💥`);
+                    } else if (err.message.indexOf('It is not time to buy') > 0) {
+                        console.log('⏰⏰ Presale contract is not active yet : ' + err.message);
+                    } else {
+                        console.log('💁‍♂️💁‍♂️ Presale contract might not be active yet : ' + err.message);
+                    }
                 } else {
                     console.log('Presale contract is not active yet : ' + err.toString());
                 }
