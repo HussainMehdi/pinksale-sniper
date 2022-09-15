@@ -1,1 +1,1 @@
-export type NetworkType = 'BNBSMART';
+export type NetworkType = 'BNBSMART'| 'BSCMAINNET' | 'ETHER';

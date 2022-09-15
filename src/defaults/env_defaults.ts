@@ -1,10 +1,11 @@
-import { NetworkType } from "../types";
+import { BotState, NetworkType } from "../types";
 
 export const ENV_DEFAULT = {
     NETWORK: 'BNBSMART' as NetworkType,
+    STATE: BotState.snipe,
     CONTRACT_ADDRESS: '',
-    BNB_AMOUNT: '0.1',
+    AMOUNT: '0.1',
     PRIVATE_KEY: '',
     POLL_TIME: '1000',
-    LOGS: true
+    LOGS: 'true'
 }
