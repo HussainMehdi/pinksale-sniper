@@ -1,4 +1,5 @@
 import fs from 'fs';
+import path from 'path';
 import { config } from "dotenv";
 import Web3 from "web3";
 import { ethers, Wallet } from 'ethers'
@@ -8,7 +9,8 @@ import { ENV_DEFAULT } from "./defaults";
 import { BotState, Pinksaleabi__factory } from "./types";
 import abi from './abis/pinksaleabi.json';
 import { isNumberObject } from 'util/types';
-let logsDir = __dirname + '/logs/';
+let logsDir = path.dirname(__dirname) + '/logs/';
+
 let logsPath = logsDir + 'ps-bot-' + new Date().toISOString().slice(0, 10) + '.log';
 
 // if logs dir missing then create it
