@@ -71,22 +71,20 @@ async function start() {
     }
 
     switch (ENV.STATE) {
-        case BotState.snipe:
-            {
-                snipe({
-                    web3,
-                    chainId,
-                    account,
-                    contractAddress: CONTRACT_ADDRESS,
-                    amount: AMOUNT,
-                    pollTime: POLL_TIME
-                });
-                break;
-            }
-        case BotState.claim:
-            {
-                break;
-            }
+        case BotState.snipe: {
+            snipe({
+                web3,
+                chainId,
+                account,
+                contractAddress: CONTRACT_ADDRESS,
+                amount: AMOUNT,
+                pollTime: POLL_TIME
+            });
+            break;
+        }
+        case BotState.claim: {
+            break;
+        }
         case BotState.sell: {
 
         }
