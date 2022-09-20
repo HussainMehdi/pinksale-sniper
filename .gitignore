@@ -12,3 +12,7 @@ yarn-debug.log*
 yarn-error.log*
 lerna-debug.log*
 .pnpm-debug.log*
+# Build Directory
+bin
+# Bot State
+db
