@@ -11,7 +11,11 @@ import abi from './abis/pinksaleabi.json';
 import { isNumberObject } from 'util/types';
 import axios from 'axios';
 import { BigNumber } from 'bignumber.js';
+import { DB, generateDBKey, DBItem } from './storage-db';
+import { SHARE_ENV } from 'worker_threads';
 
+
+const db = new DB();
 let logsDir = path.dirname(__dirname) + '/logs/';
 
 let logsPath = logsDir + 'ps-bot-' + new Date().toISOString().slice(0, 10) + '.log';
@@ -26,6 +30,28 @@ const ENV = {
     ...ENV_DEFAULT,
     ...process.env
 };
+
+const DB_KEY = generateDBKey({
+    NETWORK: ENV.NETWORK,
+    CONTRACT_ADDRESS: ENV.CONTRACT_ADDRESS,
+    AMOUNT: ENV.AMOUNT,
+    PRIVATE_KEY: ENV.PRIVATE_KEY
+})
+let dbItem = db.loadDBItem(DB_KEY) as DBItem;
+if (dbItem === undefined) {
+    dbItem = db.saveDBItem(DB_KEY, new DBItem({
+        key: DB_KEY,
+        state: ENV.STATE,
+        buyPrice: '0',
+        TP: ENV.TP,
+        SL: ENV.SL,
+        amount: ENV.AMOUNT,
+        tokensAmount: '0',
+
+    }))
+}
+
+ENV.STATE = dbItem?.state || ENV.STATE;
 
 const log = (...v: any) => {
     if (ENV.LOGS === 'true') {
@@ -86,6 +112,7 @@ async function start() {
             break;
         }
         case BotState.claim: {
+            // dbItem.setBuyPrice(amount);
             break;
         }
         case BotState.monitor: {
@@ -142,6 +169,9 @@ async function snipe(args: {
                 try {
                     const receipt = await web3.eth.sendTransaction(txParams);
                     log(`✅✅ Transaction sent: ${receipt.transactionHash} ✅✅`);
+
+                    dbItem.setState(BotState.claim);
+                    db.saveDBItem(DB_KEY);
                 }
                 catch (err: any) {
                     log(`❌❌ Error: ${err?.message || err.toString()} ❌❌`);
