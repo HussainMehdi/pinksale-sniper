@@ -1,5 +1,5 @@
 export enum BotState {
-    'snipe', 'claim', 'sell'
+    'snipe', 'claim', 'monitor', 'sell'
 }
 
 export namespace BotState {

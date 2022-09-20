@@ -1,0 +1,1 @@
+export const PANCAKE_SWAP_API = 'https://api.pancakeswap.info/api/v2/tokens/';

@@ -4,11 +4,14 @@ import { config } from "dotenv";
 import Web3 from "web3";
 import { ethers, Wallet } from 'ethers'
 import { Account } from "web3-core";
-import { CONTRACT_METHODS, NETWORKS } from "./consts";
+import { CONTRACT_METHODS, NETWORKS, PANCAKE_SWAP_API } from "./consts";
 import { ENV_DEFAULT } from "./defaults";
 import { BotState, Pinksaleabi__factory } from "./types";
 import abi from './abis/pinksaleabi.json';
 import { isNumberObject } from 'util/types';
+import axios from 'axios';
+import { BigNumber } from 'bignumber.js';
+
 let logsDir = path.dirname(__dirname) + '/logs/';
 
 let logsPath = logsDir + 'ps-bot-' + new Date().toISOString().slice(0, 10) + '.log';
@@ -85,11 +88,29 @@ async function start() {
         case BotState.claim: {
             break;
         }
+        case BotState.monitor: {
+            monitor({
+                contractAddress: CONTRACT_ADDRESS,
+                buyPrice: '0.0000002820847225380439190126288869787',
+                pollTime: POLL_TIME,
+                TP: ENV.TP,
+                SL: ENV.SL,
+            });
+            break;
+        }
         case BotState.sell: {
 
+            break;
         }
+
     }
 
+}
+
+async function fetchPancakeSwapPrice(tokenAddress: string) {
+    const url = `${PANCAKE_SWAP_API}${tokenAddress}`;
+    const response = await axios.get(url).catch(() => { });
+    return response?.data;
 }
 
 async function snipe(args: {
@@ -147,6 +168,54 @@ async function snipe(args: {
         );
     }
     setTimeout(sniperWorker, parseInt(pollTime));
+}
+
+async function monitor(args: {
+    contractAddress: string
+    buyPrice: string
+    pollTime?: string
+    TP: string
+    SL: string
+}) {
+    const { contractAddress, buyPrice, pollTime = '1000', SL, TP } = {
+        ...args,
+        buyPrice: BigNumber(args.buyPrice),
+        SL: BigNumber(args.SL),
+        TP: BigNumber(args.TP)
+    };
+
+    const monitorWorker = () => {
+        fetchPancakeSwapPrice(contractAddress).then((res) => {
+            const apiUpdateTime = res?.updated_at || 0;
+            log(`🕒 Last trade delta: ${((Date.now() - apiUpdateTime) / 1000).toFixed(4)} seconds`);
+            const price_bn = BigNumber(res?.data?.price_BNB || 0);
+            if (price_bn.isLessThan(buyPrice.times(new BigNumber(100).minus(SL).div(100)))) {
+                log(`🔴 SL HIT!`);
+            } else if (price_bn.isGreaterThan(buyPrice.times(new BigNumber(100).plus(TP).div(100)))) {
+                log(`🟢 TP HIT!`);
+            } else {
+                const PNL = price_bn.minus(buyPrice).div(buyPrice).times(100);
+                log(`🟣 Current price: ${price_bn.toFixed(18)}`);
+                log(`🟡 Buy price: ${buyPrice.toFixed(18)}`);
+                log(`${PNL.isNegative() ? '🔴' : '🟢'} PNL : ${PNL.toFixed(4)}%`);
+                log(`⌚ next check in ${pollTime}ms`);
+                setTimeout(monitorWorker, parseInt(pollTime));
+            }
+
+        }).catch(err => {
+            log('❌❌ Error: ' + err.toString() + ' ❌❌');
+            setTimeout(monitorWorker, parseInt(pollTime));
+        })
+
+    }
+    monitorWorker();
+}
+
+async function sell(args: {
+}) {
+    const { } = args;
+
+
 }
 
 start();

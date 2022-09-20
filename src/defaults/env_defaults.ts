@@ -7,5 +7,7 @@ export const ENV_DEFAULT = {
     AMOUNT: '0.1',
     PRIVATE_KEY: '',
     POLL_TIME: '1000',
+    TP: '100',
+    SL: '20',
     LOGS: 'true'
 }
