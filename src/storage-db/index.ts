@@ -51,7 +51,7 @@ export class DB {
     private db: { [key: string]: DBItem };
 
     constructor(dbPath?: string) {
-        this.dbPath = path.dirname(path.dirname(__dirname)) + `/${dbPath || 'db'}`;
+        this.dbPath = process.cwd() + `/${dbPath || 'db'}`;
         // this.dbPath = `${path.dirname(__dirname)}/${dbPath || 'db'}/'`;
         this.db = {};
         if (!fs.existsSync(this.dbPath)) {

@@ -2,12 +2,13 @@ import fs from 'fs';
 import path from 'path';
 import { config } from "dotenv";
 import Web3 from "web3";
-import { ethers, Wallet } from 'ethers'
+import { Contract, ethers, Wallet } from 'ethers'
 import { Account } from "web3-core";
 import { CONTRACT_METHODS, NETWORKS, PANCAKE_SWAP_API } from "./consts";
 import { ENV_DEFAULT } from "./defaults";
 import { BotState, Pinksaleabi__factory } from "./types";
-import abi from './abis/pinksaleabi.json';
+import pinksale_abi from './abis/pinksaleabi.json';
+import pancake_abi from './abis/pancakeswap-router-abi.json';
 import { isNumberObject } from 'util/types';
 import axios from 'axios';
 import { BigNumber } from 'bignumber.js';
@@ -16,7 +17,7 @@ import { SHARE_ENV } from 'worker_threads';
 
 
 const db = new DB();
-let logsDir = path.dirname(__dirname) + '/logs/';
+let logsDir = process.cwd() + '/logs/';
 
 let logsPath = logsDir + 'ps-bot-' + new Date().toISOString().slice(0, 10) + '.log';
 
@@ -51,7 +52,19 @@ if (dbItem === undefined) {
     }))
 }
 
-ENV.STATE = dbItem?.state || ENV.STATE;
+ENV.STATE = ENV.STATE || dbItem?.state;
+
+const { NETWORK,
+    CONTRACT_ADDRESS,
+    TOKEN_ADDRESS,
+    PANCAKE_ROUTER_ADDRESS,
+    WBNB_ADDRESS,
+    AMOUNT,
+    POLL_TIME,
+    PRIVATE_KEY,
+    LOGS } = ENV;
+
+let web3: Web3;
 
 const log = (...v: any) => {
     if (ENV.LOGS === 'true') {
@@ -68,14 +81,13 @@ const log = (...v: any) => {
 };
 
 async function start() {
-    const { NETWORK, CONTRACT_ADDRESS, AMOUNT, POLL_TIME, PRIVATE_KEY, LOGS } = ENV;
     const network_url = NETWORKS[NETWORK];
     if (!network_url) {
         log(`❌❌ Network ${NETWORK} not supported ❌❌`);
         process.exit();
     }
 
-    const web3 = new Web3(new Web3.providers.HttpProvider(network_url));
+    web3 = new Web3(new Web3.providers.HttpProvider(network_url));
     const chainId = await web3.eth.getChainId();
     const account = web3.eth.accounts.privateKeyToAccount(PRIVATE_KEY);
     web3.eth.accounts.wallet.add(account);
@@ -117,8 +129,8 @@ async function start() {
         }
         case BotState.monitor: {
             monitor({
-                contractAddress: CONTRACT_ADDRESS,
-                buyPrice: '0.0000002820847225380439190126288869787',
+                contractAddress: TOKEN_ADDRESS,
+                buyPrice: dbItem.buyPrice,
                 pollTime: POLL_TIME,
                 TP: ENV.TP,
                 SL: ENV.SL,
@@ -126,7 +138,7 @@ async function start() {
             break;
         }
         case BotState.sell: {
-
+            sell();
             break;
         }
 
@@ -167,7 +179,7 @@ async function snipe(args: {
                     to: contractAddress
                 };
                 try {
-                    const receipt = await web3.eth.sendTransaction(txParams);
+                    const receipt = { transactionHash: '' } as any //await web3.eth.sendTransaction(txParams);
                     log(`✅✅ Transaction sent: ${receipt.transactionHash} ✅✅`);
 
                     dbItem.setState(BotState.claim);
@@ -216,18 +228,31 @@ async function monitor(args: {
 
     const monitorWorker = () => {
         fetchPancakeSwapPrice(contractAddress).then((res) => {
-            const apiUpdateTime = res?.updated_at || 0;
-            log(`🕒 Last trade delta: ${((Date.now() - apiUpdateTime) / 1000).toFixed(4)} seconds`);
+            const apiUpdateTime = res?.updated_at || -1;
+            log(`🕒 Last trade delta: ${apiUpdateTime === -1 ? '⛔ NOT LISTED ❌❌' : ((Date.now() - apiUpdateTime) / 1000).toFixed(4) + ' seconds'}`);
             const price_bn = BigNumber(res?.data?.price_BNB || 0);
-            if (price_bn.isLessThan(buyPrice.times(new BigNumber(100).minus(SL).div(100)))) {
-                log(`🔴 SL HIT!`);
-            } else if (price_bn.isGreaterThan(buyPrice.times(new BigNumber(100).plus(TP).div(100)))) {
-                log(`🟢 TP HIT!`);
-            } else {
+            if (price_bn.isZero()) {
+                log(`🚧 token not yet listed on PancakeSwap...`);
+                log(`⌚ next check in ${pollTime}ms`);
+                setTimeout(monitorWorker, parseInt(pollTime));
+                return;
+            }
+            const printPNL = () => {
                 const PNL = price_bn.minus(buyPrice).div(buyPrice).times(100);
                 log(`🟣 Current price: ${price_bn.toFixed(18)}`);
                 log(`🟡 Buy price: ${buyPrice.toFixed(18)}`);
                 log(`${PNL.isNegative() ? '🔴' : '🟢'} PNL : ${PNL.toFixed(4)}%`);
+            }
+
+            if (price_bn.isLessThan(buyPrice.times(new BigNumber(100).minus(SL).div(100)))) {
+                printPNL();
+                log(`🔴 SL HIT!`);
+                sell()
+            } else if (price_bn.isGreaterThan(buyPrice.times(new BigNumber(100).plus(TP).div(100)))) {
+                printPNL();
+                log(`🟢 TP HIT!`);
+            } else {
+                printPNL();
                 log(`⌚ next check in ${pollTime}ms`);
                 setTimeout(monitorWorker, parseInt(pollTime));
             }
@@ -241,11 +266,33 @@ async function monitor(args: {
     monitorWorker();
 }
 
-async function sell(args: {
-}) {
-    const { } = args;
+async function sell() {
+    const pancake = new web3.eth.Contract(pancake_abi as any, PANCAKE_ROUTER_ADDRESS);
 
+    const payload = await pancake.methods.swapExactTokensForETH(
+        web3.utils.toHex(dbItem.tokensAmount),
+        web3.utils.toHex('0'),
+        [
+            TOKEN_ADDRESS,
+            WBNB_ADDRESS
+        ],
+        web3.eth.accounts.wallet[0].address,
+        '0x000000000000000000000000ae13d989dac2f0debff460ac112a837c89baa7cd' // long long expiry block.timestamp
+    )
 
+    const gas = await payload.estimateGas({
+        from: web3.eth.accounts.wallet[0].address,
+        to: PANCAKE_ROUTER_ADDRESS
+    })
+
+    console.log(gas)
+    const res = await payload.send({
+        from: web3.eth.accounts.wallet[0].address,
+        to: PANCAKE_ROUTER_ADDRESS,
+        gas: gas
+    })
+
+    console.log(res);
 }
 
 start();
